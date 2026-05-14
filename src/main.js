@@ -1,60 +1,287 @@
-import './style.css'
-import javascriptLogo from './assets/javascript.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import { setupCounter } from './counter.js'
+import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { MeshSurfaceSampler } from 'three/examples/jsm/math/MeshSurfaceSampler.js';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-document.querySelector('#app').innerHTML = `
-<section id="center">
-  <div class="hero">
-    <img src="${heroImg}" class="base" width="170" height="179">
-    <img src="${javascriptLogo}" class="framework" alt="JavaScript logo"/>
-    <img src="${viteLogo}" class="vite" alt="Vite logo" />
-  </div>
-  <div>
-    <h1>Get started</h1>
-    <p>Edit <code>src/main.js</code> and save to test <code>HMR</code></p>
-  </div>
-  <button id="counter" type="button" class="counter"></button>
-</section>
+// --- Configuration ---
+const CONFIG = {
+  particleCount: 200000, 
+  starCount: 15000,
+  baseColor: new THREE.Color(0xccff00), // New Neon Yellow-Green
+  accentColor: new THREE.Color(0xffff00), // Pure Yellow
+  particleSize: 0.006, 
+  rotationSpeed: 0.1,
+  flightSpeed: 0.15, // Slow flight speed
+  flightRadius: 4.0, // Orbit radius
+};
 
-<div class="ticks"></div>
+// --- Scene Setup ---
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.z = 12;
 
-<section id="next-steps">
-  <div id="docs">
-    <svg class="icon" role="presentation" aria-hidden="true"><use href="/icons.svg#documentation-icon"></use></svg>
-    <h2>Documentation</h2>
-    <p>Your questions, answered</p>
-    <ul>
-      <li>
-        <a href="https://vite.dev/" target="_blank">
-          <img class="logo" src="${viteLogo}" alt="" />
-          Explore Vite
-        </a>
-      </li>
-      <li>
-        <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript" target="_blank">
-          <img class="button-icon" src="${javascriptLogo}" alt="">
-          Learn more
-        </a>
-      </li>
-    </ul>
-  </div>
-  <div id="social">
-    <svg class="icon" role="presentation" aria-hidden="true"><use href="/icons.svg#social-icon"></use></svg>
-    <h2>Connect with us</h2>
-    <p>Join the Vite community</p>
-    <ul>
-      <li><a href="https://github.com/vitejs/vite" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#github-icon"></use></svg>GitHub</a></li>
-      <li><a href="https://chat.vite.dev/" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#discord-icon"></use></svg>Discord</a></li>
-      <li><a href="https://x.com/vite_js" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#x-icon"></use></svg>X.com</a></li>
-      <li><a href="https://bsky.app/profile/vite.dev" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#bluesky-icon"></use></svg>Bluesky</a></li>
-    </ul>
-  </div>
-</section>
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+document.getElementById('app').appendChild(renderer.domElement);
 
-<div class="ticks"></div>
-<section id="spacer"></section>
-`
+// --- Controls ---
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.minDistance = 5;
+controls.maxDistance = 50;
 
-setupCounter(document.querySelector('#counter'))
+// --- Post-Processing ---
+const renderScene = new RenderPass(scene, camera);
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.6, // Balanced bloom for clarity
+  0.4, 
+  0.8  
+);
+const composer = new EffectComposer(renderer);
+composer.addPass(renderScene);
+composer.addPass(bloomPass);
+
+// --- Background ---
+function createStarfield() {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(CONFIG.starCount * 3);
+  for (let i = 0; i < CONFIG.starCount; i++) {
+    const r = 40 + Math.random() * 60;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    pos[i * 3 + 2] = r * Math.cos(phi);
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.04, transparent: true, opacity: 0.3 }));
+}
+scene.add(createStarfield());
+
+// --- Dragon Implementation ---
+let particles;
+
+async function init() {
+  const loader = new GLTFLoader();
+  try {
+    const gltf = await loader.loadAsync('./demon_dragon.glb');
+    
+    const geometries = [];
+    gltf.scene.traverse((child) => {
+      if (child.isMesh) {
+        const geo = child.geometry.clone();
+        child.updateMatrixWorld();
+        geo.applyMatrix4(child.matrixWorld);
+        geometries.push(geo);
+      }
+    });
+    
+    let mergedGeo = BufferGeometryUtils.mergeGeometries(geometries);
+    mergedGeo.center();
+    mergedGeo.computeBoundingSphere();
+    const radius = mergedGeo.boundingSphere.radius;
+    const scaleFactor = 8.0 / radius; 
+    mergedGeo.scale(scaleFactor, scaleFactor, scaleFactor);
+    
+    const sampler = new MeshSurfaceSampler(new THREE.Mesh(mergedGeo)).build();
+    const positions = new Float32Array(CONFIG.particleCount * 3);
+    const colors = new Float32Array(CONFIG.particleCount * 3);
+    const sizes = new Float32Array(CONFIG.particleCount);
+    const randomness = new Float32Array(CONFIG.particleCount);
+    
+    const tempPos = new THREE.Vector3();
+    for (let i = 0; i < CONFIG.particleCount; i++) {
+      sampler.sample(tempPos);
+      positions[i * 3] = tempPos.x;
+      positions[i * 3 + 1] = tempPos.y;
+      positions[i * 3 + 2] = tempPos.z;
+      
+      const mixed = CONFIG.baseColor.clone().lerp(CONFIG.accentColor, Math.random() * 0.5);
+      colors[i * 3] = mixed.r;
+      colors[i * 3 + 1] = mixed.g;
+      colors[i * 3 + 2] = mixed.b;
+      
+      sizes[i] = Math.random() * 0.7 + 0.3;
+      randomness[i] = Math.random();
+    }
+    
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute('randomness', new THREE.BufferAttribute(randomness, 1));
+    
+    const material = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uSize: { value: CONFIG.particleSize }, uPixelRatio: { value: renderer.getPixelRatio() } },
+      vertexShader: `
+        uniform float uTime, uSize, uPixelRatio;
+        attribute float size, randomness;
+        varying vec3 vColor;
+        varying float vAlpha;
+        void main() {
+          vColor = color;
+          vec3 p = position;
+          // Micro-vibration
+          p.x += sin(uTime * 2.0 + randomness * 100.0) * 0.01;
+          p.z += cos(uTime * 2.0 + randomness * 100.0) * 0.01;
+
+          // Stronger Wing Flapping
+          // Frequency increased to 2.5 for faster movement
+          float flap = sin(uTime * 2.5 + abs(p.x) * 0.2);
+          p.y += flap * abs(p.x) * 0.25;
+          
+          // Subtle Body Wave
+          p.y += sin(uTime * 0.6 + p.z * 0.3) * 0.08;
+          
+          // Tail Sway (Horizontal movement increasing towards the tail)
+          // Frequency increased to 2.2 for faster sway
+          float tailSway = sin(uTime * 2.2 + p.z * 1.0) * smoothstep(0.0, -8.0, p.z) * 0.4;
+          p.x += tailSway;
+          
+          vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
+          gl_PointSize = uSize * size * uPixelRatio * (800.0 / -mvPos.z);
+          gl_Position = projectionMatrix * mvPos;
+          vAlpha = smoothstep(-20.0, 0.0, mvPos.z);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor; varying float vAlpha;
+        void main() {
+          float d = distance(gl_PointCoord, vec2(0.5));
+          if (d > 0.5) discard;
+          float strength = pow(1.0 - (d * 2.0), 2.5);
+          gl_FragColor = vec4(vColor, strength * vAlpha * 0.7);
+        }
+      `,
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, vertexColors: true
+    });
+    
+    particles = new THREE.Points(geometry, material);
+    scene.add(particles);
+    
+    // --- Logo Particles ---
+    await createLogoParticles();
+    
+  } catch (err) {
+    console.error('Dragon Load Error:', err);
+  }
+}
+
+const clock = new THREE.Clock();
+function animate() {
+  const et = clock.getElapsedTime();
+  
+  if (controls) controls.update();
+  
+  if (particles) {
+    // Gentle Orbital Flight
+    particles.position.x = Math.cos(et * CONFIG.flightSpeed) * CONFIG.flightRadius;
+    particles.position.z = Math.sin(et * CONFIG.flightSpeed) * CONFIG.flightRadius;
+    particles.position.y = Math.sin(et * 0.4) * 0.5; // Vertical oscillation
+    
+    // Head points straight (forward), tail points towards the Raiku logo background
+    particles.rotation.y = 0; 
+    
+    particles.material.uniforms.uTime.value = et;
+  }
+  composer.render();
+  requestAnimationFrame(animate);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+});
+
+async function createLogoParticles() {
+  const loader = new THREE.TextureLoader();
+  try {
+    const texture = await loader.loadAsync('./logo.png');
+    const img = texture.image;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Scale down for sampling performance
+    const scale = 0.5; 
+    canvas.width = img.width * scale;
+    canvas.height = img.height * scale;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const positions = [];
+    const colors = [];
+    const randomness = [];
+    
+    const step = 2; // Increase step to reduce density
+    for (let y = 0; y < canvas.height; y += step) {
+      for (let x = 0; x < canvas.width; x += step) {
+        const alpha = data[(y * canvas.width + x) * 4 + 3];
+        if (alpha > 128) {
+          const px = (x - canvas.width / 2) * 0.08;
+          const py = (canvas.height / 2 - y) * 0.08;
+          positions.push(px, py, -18); 
+          
+          const c = CONFIG.baseColor.clone().lerp(new THREE.Color(0xffffff), 0.2);
+          colors.push(c.r, c.g, c.b);
+          randomness.push(Math.random());
+        }
+      }
+    }
+    
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
+    geo.setAttribute('randomness', new THREE.BufferAttribute(new Float32Array(randomness), 1));
+    
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uSize: { value: 0.02 }, uPixelRatio: { value: renderer.getPixelRatio() } },
+      vertexShader: `
+        uniform float uTime, uSize, uPixelRatio;
+        attribute float randomness;
+        varying vec3 vColor;
+        void main() {
+          vColor = color;
+          vec3 p = position;
+          p.z += sin(uTime * 0.5 + randomness * 10.0) * 0.15; 
+          vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
+          gl_PointSize = uSize * uPixelRatio * (800.0 / -mvPos.z);
+          gl_Position = projectionMatrix * mvPos;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor;
+        void main() {
+          if (distance(gl_PointCoord, vec2(0.5)) > 0.5) discard;
+          gl_FragColor = vec4(vColor, 0.25); // Lowered alpha for subtlety
+        }
+      `,
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, vertexColors: true
+    });
+    
+    const logoParticles = new THREE.Points(geo, mat);
+    scene.add(logoParticles);
+    
+    // Add to animation loop
+    const originalAnimate = animate;
+    animate = function() {
+      const et = clock.getElapsedTime();
+      mat.uniforms.uTime.value = et;
+      originalAnimate();
+    };
+    
+  } catch (e) {
+    console.error("Logo particle error:", e);
+  }
+}
+
+init();
+animate();
