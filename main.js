@@ -10,8 +10,8 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 const CONFIG = {
   particleCount: 200000, 
   starCount: 15000,
-  baseColor: new THREE.Color(0x00f2ff),
-  accentColor: new THREE.Color(0x0088ff),
+  baseColor: new THREE.Color(0x39ff14), // Neon Green
+  accentColor: new THREE.Color(0x00ff00), // Pure Green
   particleSize: 0.006, 
   rotationSpeed: 0.1,
 };
