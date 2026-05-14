@@ -126,10 +126,10 @@ async function init() {
           p.x += sin(uTime * 2.0 + randomness * 100.0) * 0.01;
           p.z += cos(uTime * 2.0 + randomness * 100.0) * 0.01;
 
-          // Gentle Wing Flapping
-          // Frequency: 1.2, Amplitude: 0.12, Phase shift based on distance from center
-          float flap = sin(uTime * 1.2 + abs(p.x) * 0.2);
-          p.y += flap * abs(p.x) * 0.12;
+          // Stronger Wing Flapping
+          // Frequency increased to 1.8, Amplitude increased to 0.25
+          float flap = sin(uTime * 1.8 + abs(p.x) * 0.2);
+          p.y += flap * abs(p.x) * 0.25;
           
           // Subtle Body Wave
           p.y += sin(uTime * 0.6 + p.z * 0.3) * 0.08;
