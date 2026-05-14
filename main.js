@@ -11,10 +11,12 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 const CONFIG = {
   particleCount: 200000, 
   starCount: 15000,
-  baseColor: new THREE.Color(0x39ff14), // Neon Green
-  accentColor: new THREE.Color(0x00ff00), // Pure Green
+  baseColor: new THREE.Color(0xccff00), // New Neon Yellow-Green
+  accentColor: new THREE.Color(0xffff00), // Pure Yellow
   particleSize: 0.006, 
   rotationSpeed: 0.1,
+  flightSpeed: 0.15, // Slow flight speed
+  flightRadius: 4.0, // Orbit radius
 };
 
 // --- Scene Setup ---
@@ -65,10 +67,6 @@ scene.add(createStarfield());
 
 // --- Dragon Implementation ---
 let particles;
-let loadingOverlay = document.createElement('div');
-loadingOverlay.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:cyan;font-family:sans-serif;font-size:14px;letter-spacing:5px;';
-loadingOverlay.innerText = 'RESTORED DRAGON PARTICLES...';
-document.body.appendChild(loadingOverlay);
 
 async function init() {
   const loader = new GLTFLoader();
@@ -167,11 +165,12 @@ async function init() {
     
     particles = new THREE.Points(geometry, material);
     scene.add(particles);
-    loadingOverlay.remove();
+    
+    // --- Logo Particles ---
+    await createLogoParticles();
     
   } catch (err) {
     console.error('Dragon Load Error:', err);
-    loadingOverlay.innerText = 'LOAD ERROR';
   }
 }
 
@@ -182,8 +181,15 @@ function animate() {
   if (controls) controls.update();
   
   if (particles) {
+    // Gentle Orbital Flight
+    particles.position.x = Math.cos(et * CONFIG.flightSpeed) * CONFIG.flightRadius;
+    particles.position.z = Math.sin(et * CONFIG.flightSpeed) * CONFIG.flightRadius;
+    particles.position.y = Math.sin(et * 0.4) * 0.5; // Vertical oscillation
+    
+    // Head points straight (forward), tail points towards the Raiku logo background
+    particles.rotation.y = 0; 
+    
     particles.material.uniforms.uTime.value = et;
-    particles.rotation.y = et * CONFIG.rotationSpeed;
   }
   composer.render();
   requestAnimationFrame(animate);
@@ -195,6 +201,87 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   composer.setSize(window.innerWidth, window.innerHeight);
 });
+
+async function createLogoParticles() {
+  const loader = new THREE.TextureLoader();
+  try {
+    const texture = await loader.loadAsync('./logo.png');
+    const img = texture.image;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Scale down for sampling performance
+    const scale = 0.5; 
+    canvas.width = img.width * scale;
+    canvas.height = img.height * scale;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const positions = [];
+    const colors = [];
+    const randomness = [];
+    
+    const step = 2; // Increase step to reduce density
+    for (let y = 0; y < canvas.height; y += step) {
+      for (let x = 0; x < canvas.width; x += step) {
+        const alpha = data[(y * canvas.width + x) * 4 + 3];
+        if (alpha > 128) {
+          const px = (x - canvas.width / 2) * 0.08;
+          const py = (canvas.height / 2 - y) * 0.08;
+          positions.push(px, py, -18); 
+          
+          const c = CONFIG.baseColor.clone().lerp(new THREE.Color(0xffffff), 0.2);
+          colors.push(c.r, c.g, c.b);
+          randomness.push(Math.random());
+        }
+      }
+    }
+    
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
+    geo.setAttribute('randomness', new THREE.BufferAttribute(new Float32Array(randomness), 1));
+    
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uSize: { value: 0.02 }, uPixelRatio: { value: renderer.getPixelRatio() } },
+      vertexShader: `
+        uniform float uTime, uSize, uPixelRatio;
+        attribute float randomness;
+        varying vec3 vColor;
+        void main() {
+          vColor = color;
+          vec3 p = position;
+          p.z += sin(uTime * 0.5 + randomness * 10.0) * 0.15; 
+          vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
+          gl_PointSize = uSize * uPixelRatio * (800.0 / -mvPos.z);
+          gl_Position = projectionMatrix * mvPos;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor;
+        void main() {
+          if (distance(gl_PointCoord, vec2(0.5)) > 0.5) discard;
+          gl_FragColor = vec4(vColor, 0.25); // Lowered alpha for subtlety
+        }
+      `,
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, vertexColors: true
+    });
+    
+    const logoParticles = new THREE.Points(geo, mat);
+    scene.add(logoParticles);
+    
+    // Add to animation loop
+    const originalAnimate = animate;
+    animate = function() {
+      const et = clock.getElapsedTime();
+      mat.uniforms.uTime.value = et;
+      originalAnimate();
+    };
+    
+  } catch (e) {
+    console.error("Logo particle error:", e);
+  }
+}
 
 init();
 animate();
