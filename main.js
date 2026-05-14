@@ -124,7 +124,15 @@ async function init() {
           vec3 p = position;
           // Micro-vibration
           p.x += sin(uTime * 2.0 + randomness * 100.0) * 0.01;
-          p.y += cos(uTime * 2.0 + randomness * 100.0) * 0.01;
+          p.z += cos(uTime * 2.0 + randomness * 100.0) * 0.01;
+
+          // Gentle Wing Flapping
+          // Frequency: 1.2, Amplitude: 0.12, Phase shift based on distance from center
+          float flap = sin(uTime * 1.2 + abs(p.x) * 0.2);
+          p.y += flap * abs(p.x) * 0.12;
+          
+          // Subtle Body Wave
+          p.y += sin(uTime * 0.6 + p.z * 0.3) * 0.08;
           
           vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
           gl_PointSize = uSize * size * uPixelRatio * (800.0 / -mvPos.z);
