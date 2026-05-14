@@ -135,12 +135,17 @@ async function init() {
           p.z += cos(uTime * 2.0 + randomness * 100.0) * 0.01;
 
           // Stronger Wing Flapping
-          // Frequency increased to 1.8, Amplitude increased to 0.25
-          float flap = sin(uTime * 1.8 + abs(p.x) * 0.2);
+          // Frequency increased to 2.5 for faster movement
+          float flap = sin(uTime * 2.5 + abs(p.x) * 0.2);
           p.y += flap * abs(p.x) * 0.25;
           
           // Subtle Body Wave
           p.y += sin(uTime * 0.6 + p.z * 0.3) * 0.08;
+          
+          // Tail Sway (Horizontal movement increasing towards the tail)
+          // Frequency increased to 2.2 for faster sway
+          float tailSway = sin(uTime * 2.2 + p.z * 1.0) * smoothstep(0.0, -8.0, p.z) * 0.4;
+          p.x += tailSway;
           
           vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
           gl_PointSize = uSize * size * uPixelRatio * (800.0 / -mvPos.z);
